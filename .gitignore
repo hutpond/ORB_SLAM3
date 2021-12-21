@@ -4,6 +4,7 @@ CMakeLists_modified.txt
 Examples/RGB-D/rgbd_tum
 
 Examples/Monocular/mono_euroc
+Examples/Monocular/mono_test
 Examples/Monocular/mono_kitti
 Examples/Monocular/mono_tum
 Examples/Monocular/mono_tum_vi

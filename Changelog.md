@@ -1,6 +1,11 @@
 # ORB-SLAM3
 Details of changes between the different versions.
 
+### T0.5 version, 21 Dec 2021
+
+- Last version of UZ-SLAMLab/ORB_SLAM3
+
+
 ### V0.4: Beta version, 21 April 2021
 
 - Changed OpenCV dynamic matrices to static matrices to speed up the code.
