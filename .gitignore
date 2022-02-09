@@ -1,6 +1,8 @@
 CMakeLists.txt.user
 CMakeLists_modified.txt
 
+.vscode
+
 Examples/RGB-D/rgbd_tum
 
 Examples/Monocular/mono_euroc
