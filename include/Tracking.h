@@ -11,6 +11,12 @@
 * ORB-SLAM3 is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
 * the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 * GNU General Public License for more details.
+* 
+* 1、提取ORB 特征（提取ORB （关键点）keypoints和ORB descriptor）
+* 2、进行初始化
+* 3、获取初始Pose
+* 4、在Track Local Map中优化获取到的Pose
+* 5、判断当前帧是否被选为Keyframe（关键帧）
 *
 * You should have received a copy of the GNU General Public License along with ORB-SLAM3.
 * If not, see <http://www.gnu.org/licenses/>.

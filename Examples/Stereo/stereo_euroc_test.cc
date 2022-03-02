@@ -87,6 +87,10 @@ int main(int argc, char **argv)
     while (true)
     {
         auto frame = video_reader.get_frame();
+        if (frame.empty()) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          continue;
+        }
 
         // Read left and right images from file
         imLeft = cv::Mat(frame, cv::Rect(0, 0, 640, 480));
@@ -95,10 +99,9 @@ int main(int argc, char **argv)
         cv::remap(imLeft,imLeftRect,M1l,M2l,cv::INTER_LINEAR);
         cv::remap(imRight,imRightRect,M1r,M2r,cv::INTER_LINEAR);
 
-        auto microseconds = std::chrono::duration_cast<std::chrono::nanoseconds> 
+        auto microseconds = std::chrono::duration_cast<std::chrono::nanoseconds>
             (std::chrono::high_resolution_clock::now().time_since_epoch()).count(); 
         double ttrack = microseconds / 1.0e9;
-
 
         // Pass the images to the SLAM system
         SLAM.TrackStereo(imLeftRect,imRightRect,ttrack);

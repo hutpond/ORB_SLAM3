@@ -39,10 +39,8 @@ public:
   cv::Mat get_frame() {
       cv::Mat frame;
       if (camera_falg_) {
-        {
-          std::lock_guard<std::mutex> gaurd(mutex_);
-          frame = frame_.clone();
-        }
+        std::lock_guard<std::mutex> gaurd(mutex_);
+        frame = frame_.clone();
       }
       else {
         for (int i = 0; i < frame_interval_; ++i) {
