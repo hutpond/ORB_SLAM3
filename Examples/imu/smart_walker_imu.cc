@@ -18,13 +18,15 @@
 #include <iostream>
 
 std::ostream & operator << (std::ostream &out, const imu_data &data) {
-  std::cout << "x acc: " << data.x_acceleration << ", "
-            << "y acc: " << data.y_acceleration << ", "
-            << "z acc: " << data.z_acceleration << ", "
-            << "yaw ang v: " << data.yaw_angular_v << ", "
-            << "yaw: " << data.yaw << ", "
-            << "pitch: " << data.pitch << ", "
-            << "roll: " << data.roll << std::endl;
+  std::cout << "acceration: " << data.x_acceleration << ", "
+            << data.y_acceleration << ", "
+            << data.z_acceleration << std::endl
+            << "ang vel: " << data.yaw_angular_v << ", "
+            << data.pitch_angular_v << ", "
+            << data.roll_angular_v << std::endl
+            << "angle: " << data.yaw << ", "
+            << data.pitch << ", "
+            << data.roll << std::endl << std::endl;
   return out;
 }
 
@@ -60,6 +62,21 @@ void smart_walker_imu::stop()
   thread_read_->join();
 }
 
+void smart_walker_imu::get_data(std::vector<ORB_SLAM3::IMU::Point> &imu_meas, double time_stamp)
+{
+  std::lock_guard<std::mutex> lock(mutex_rw_);
+  const int Size = imu_datas_.size();
+  for (int i = 0; i < Size; ++i) {
+    // if (imu_datas_[i]->time_stamps <= time_stamp) {
+      imu_meas.push_back(ORB_SLAM3::IMU::Point(
+        imu_datas_[i]->x_acceleration, imu_datas_[i]->y_acceleration, imu_datas_[i]->z_acceleration,
+        imu_datas_[i]->yaw_angular_v, imu_datas_[i]->pitch_angular_v, imu_datas_[i]->roll_angular_v,
+        imu_datas_[i]->time_stamps));
+    // }
+  }
+  imu_datas_.clear();
+}
+
 void smart_walker_imu::read_data()
 {
   constexpr int Data_Len = 16;
@@ -68,10 +85,14 @@ void smart_walker_imu::read_data()
 
   uint8_t data[1024];
   uint8_t crc_data[2];
-  int16_t raw_data;
 
   flag_rw_ = true;
   uint32_t pnt_idx = 0;
+  auto s_t1 = std::chrono::duration_cast<std::chrono::nanoseconds>
+    (std::chrono::high_resolution_clock::now().time_since_epoch()).count() / (1000.0 * 1000.0 * 1000.0);
+  double pitch_old = 0;
+  double roll_old = 0;
+  
   while(flag_rw_) {
     size_t len = read(fd_, data, 1);
     if (len != 1 || data[0] != 0xA5) {
@@ -105,43 +126,59 @@ void smart_walker_imu::read_data()
       continue;
     }
 
+    std::shared_ptr<imu_data> cur_imu_data = std::make_shared<imu_data>();
+    cur_imu_data->time_stamps = (double)std::chrono::duration_cast<std::chrono::nanoseconds>
+      (std::chrono::high_resolution_clock::now().time_since_epoch()).count() / (1000 * 1000 * 1000);
+    auto s_t2 = cur_imu_data->time_stamps;
+
+    int16_t raw_data;
+    // int16_t raw_data_yaw_angv;
+    // int16_t raw_data_yaw, raw_data_pitch, raw_data_roll;
+
     // x acceleration
     size_t index = 2;
     memcpy(&raw_data, data + index, 2);
-    imu_data_.x_acceleration = raw_data * gravity * 2 / range;
-
+    cur_imu_data->z_acceleration = raw_data * gravity / 1024.0;
     // y acceleration
     index += 2;
     memcpy(&raw_data, data + index, 2);
-    imu_data_.y_acceleration = raw_data * gravity * 2 / range;
-
+    cur_imu_data->y_acceleration = raw_data * gravity / 1024.0;
     // z acceleration
     index += 2;
     memcpy(&raw_data, data + index, 2);
-    imu_data_.z_acceleration = raw_data * gravity * 2 / range;
-
+    cur_imu_data->x_acceleration = raw_data * gravity / 1024.0;
     // yaw angular velocity
     index += 2;
     memcpy(&raw_data, data + index, 2);
-    imu_data_.yaw_angular_v = raw_data / 100.0;
-
+    cur_imu_data->yaw_angular_v = raw_data / 100.0 / 180.0 * M_PI;
     // yaw
     index += 2;
     memcpy(&raw_data, data + index, 2);
-    imu_data_.yaw = raw_data / 100.0;
-
+    cur_imu_data->yaw = raw_data / 100.0;
     // pitch
     index += 2;
     memcpy(&raw_data, data + index, 2);
-    imu_data_.pitch = raw_data / 100.0;
-
+    cur_imu_data->pitch = raw_data / 100.0;
     // roll
     index += 2;
     memcpy(&raw_data, data + index, 2);
-    imu_data_.roll = raw_data / 100.0;
+    cur_imu_data->roll = raw_data / 100.0;
 
-    if (++ pnt_idx % 150 == 0) {
-      std::cout << imu_data_;
+    cur_imu_data->pitch_angular_v = (cur_imu_data->pitch - pitch_old) / (s_t2 - s_t1) / 180.0 * M_PI;
+    cur_imu_data->roll_angular_v = (cur_imu_data->roll - roll_old) / (s_t2 - s_t1) / 180.0 * M_PI;
+
+    pitch_old = cur_imu_data->pitch;
+    roll_old = cur_imu_data->roll;
+    s_t1 = s_t2;
+
+    // data
+    {
+      std::lock_guard<std::mutex> lock(mutex_rw_);
+      imu_datas_.push_back(cur_imu_data);
     }
+
+    // if (++ pnt_idx % 150 == 0) {
+    //   std::cout << *cur_imu_data;
+    // }
   }
 }

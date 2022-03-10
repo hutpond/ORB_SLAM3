@@ -10,6 +10,10 @@
  */
 #include <memory>
 #include <thread>
+#include <mutex>
+#include <vector>
+
+#include "ImuTypes.h"
 
 struct imu_data
 {
@@ -18,9 +22,14 @@ struct imu_data
   double z_acceleration;
 
   double yaw_angular_v;
+  double pitch_angular_v;
+  double roll_angular_v;
+
   double yaw;
   double pitch;
   double roll;
+
+  double time_stamps;
 };
 
 class smart_walker_imu
@@ -29,10 +38,12 @@ private:
   int fd_;
   bool flag_rw_;
   std::shared_ptr<std::thread> thread_read_;
-  imu_data imu_data_;
+  std::mutex mutex_rw_;
+  std::vector<std::shared_ptr<imu_data>> imu_datas_;
 public:
   smart_walker_imu();
   ~smart_walker_imu();
+  void get_data(std::vector<ORB_SLAM3::IMU::Point> &, double time_stamp);
   void stop();
 protected:
   void read_data();

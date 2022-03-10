@@ -31,70 +31,30 @@
 #include "ImuTypes.h"
 #include "Optimizer.h"
 
+#include "Examples/video_read.hpp"
+#include "Examples/imu/smart_walker_imu.h"
+
 using namespace std;
-
-void LoadImages(const string &strPathLeft, const string &strPathRight, const string &strPathTimes,
-                vector<string> &vstrImageLeft, vector<string> &vstrImageRight, vector<double> &vTimeStamps);
-
-void LoadIMU(const string &strImuPath, vector<double> &vTimeStamps, vector<cv::Point3f> &vAcc, vector<cv::Point3f> &vGyro);
 
 
 int main(int argc, char **argv)
 {
-  /*  ./Stereo-Inertial/stereo_inertial_euroc
-    ../Vocabulary/ORBvoc.txt
-    ./Stereo-Inertial/EuRoC.yaml
-    ~/hutpond/dataset/orbslam/MH01 
-    ./Stereo-Inertial/EuRoC_TimeStamps/MH01.txt 
-    
-    */
+  /*
+  ./Stereo-Inertial/stereo_inertial_euroc \
+    ../Vocabulary/ORBvoc.txt \
+    ./Stereo-Inertial/EuRoC.yaml \
+    /home/lz/hutpond/dataset/orbslam/MH01 \
+    ./Stereo-Inertial/EuRoC_TimeStamps/MH01.txt \
+    dataset-MH01_stereoi
+  */
 
-    // Load all sequences:
-    vector<string> vstrImageLeft;
-    vector<string> vstrImageRight;
-    vector<double> vTimestampsCam;
-    vector<cv::Point3f> vAcc, vGyro;
-    vector<double> vTimestampsImu;
-    int nImages;
-    int nImu;
-    int first_imu = 0;
-
-        string pathSeq("~/hutpond/dataset/orbslam/MH01");
-        string pathTimeStamps("./Stereo-Inertial/EuRoC_TimeStamps/MH01.txt");
-
-        string pathCam0 = pathSeq + "/mav0/cam0/data";
-        string pathCam1 = pathSeq + "/mav0/cam1/data";
-        string pathImu = pathSeq + "/mav0/imu0/data.csv";
-
-        cout << "Loading Images" << endl;
-        LoadImages(pathCam0, pathCam1, pathTimeStamps, vstrImageLeft, vstrImageRight, vTimestampsCam);
-
-        cout << "Loading IMU for sequence " << "...";
-        LoadIMU(pathImu, vTimestampsImu, vAcc, vGyro);
-        cout << "LOADED!" << endl;
-
-        nImages = vstrImageLeft.size();
-        nImu = vTimestampsImu.size();
-
-        if((nImages<=0)||(nImu<=0))
-        {
-            cerr << "ERROR: Failed to load images or IMU for sequence" << endl;
-            return 1;
-        }
-
-        // Find first imu to be considered, supposing imu measurements start first
-
-        while(vTimestampsImu[first_imu]<=vTimestampsCam[0])
-            first_imu++;
-        first_imu--; // first imu measurement to be considered
-
-    // Read rectification parameters
-    cv::FileStorage fsSettings("./Stereo-Inertial/EuRoC.yaml", cv::FileStorage::READ);
-    if(!fsSettings.isOpened())
-    {
-        cerr << "ERROR: Wrong path to settings" << endl;
-        return -1;
-    }
+  // Read rectification parameters
+  cv::FileStorage fsSettings("./Stereo-Inertial/EuRoC_test.yaml", cv::FileStorage::READ);
+  if(!fsSettings.isOpened())
+  {
+      cerr << "ERROR: Wrong path to settings" << endl;
+      return -1;
+  }
 
     cv::Mat K_l, K_r, P_l, P_r, R_l, R_r, D_l, D_r;
     fsSettings["LEFT.K"] >> K_l;
@@ -126,184 +86,57 @@ int main(int argc, char **argv)
     cv::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,M1r,M2r);
 
 
-    // Vector for tracking time statistics
-    vector<float> vTimesTrack;
-    vTimesTrack.resize(nImages);
-
     cout << endl << "-------" << endl;
     cout.precision(17);
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
-    ORB_SLAM3::System SLAM("../Vocabulary/ORBvoc.txt","./Stereo-Inertial/EuRoC.yaml",ORB_SLAM3::System::IMU_STEREO, true);
+    ORB_SLAM3::System SLAM("../Vocabulary/ORBvoc.txt","./Stereo-Inertial/EuRoC_test.yaml",ORB_SLAM3::System::IMU_STEREO, true);
 
     cv::Mat imLeft, imRight, imLeftRect, imRightRect;
-        
-        vector<ORB_SLAM3::IMU::Point> vImuMeas;
-        double t_rect = 0;
-        double t_track = 0;
-        int num_rect = 0;
-        int proccIm = 0;
-        for(int ni=0; ni<nImages; ni++, proccIm++)
-        {
-            // Read left and right images from file
-            imLeft = cv::imread(vstrImageLeft[ni],cv::IMREAD_UNCHANGED);
-            imRight = cv::imread(vstrImageRight[ni],cv::IMREAD_UNCHANGED);
-
-            if(imLeft.empty())
-            {
-                cerr << endl << "Failed to load image at: "
-                     << string(vstrImageLeft[ni]) << endl;
-                return 1;
-            }
-
-            if(imRight.empty())
-            {
-                cerr << endl << "Failed to load image at: "
-                     << string(vstrImageRight[ni]) << endl;
-                return 1;
-            }
+    vector<ORB_SLAM3::IMU::Point> vImuMeas;
+    double t_rect = 0;
+    double t_track = 0;
+    int num_rect = 0;
+    int proccIm = 0;
 
 
-#ifdef REGISTER_TIMES
-    #ifdef COMPILEDWITHC11
-            std::chrono::steady_clock::time_point t_Start_Rect = std::chrono::steady_clock::now();
-    #else
-            std::chrono::monotonic_clock::time_point t_Start_Rect = std::chrono::monotonic_clock::now();
-    #endif
-#endif
-            cv::remap(imLeft,imLeftRect,M1l,M2l,cv::INTER_LINEAR);
-            cv::remap(imRight,imRightRect,M1r,M2r,cv::INTER_LINEAR);
-
-#ifdef REGISTER_TIMES
-    #ifdef COMPILEDWITHC11
-            std::chrono::steady_clock::time_point t_End_Rect = std::chrono::steady_clock::now();
-    #else
-            std::chrono::monotonic_clock::time_point t_End_Rect = std::chrono::monotonic_clock::now();
-    #endif
-            t_rect = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(t_End_Rect - t_Start_Rect).count();
-            SLAM.InsertRectTime(t_rect);
-#endif
-            double tframe = vTimestampsCam[ni];
-
-            // Load imu measurements from previous frame
-            vImuMeas.clear();
-
-            if(ni>0)
-                while(vTimestampsImu[first_imu]<=vTimestampsCam[ni])
-                {
-                    vImuMeas.push_back(ORB_SLAM3::IMU::Point(vAcc[first_imu].x,vAcc[first_imu].y,vAcc[first_imu].z,
-                                                             vGyro[first_imu].x,vGyro[first_imu].y,vGyro[first_imu].z,
-                                                             vTimestampsImu[first_imu]));
-                    first_imu++;
-                }
-
-    #ifdef COMPILEDWITHC11
-            std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
-    #else
-            std::chrono::monotonic_clock::time_point t1 = std::chrono::monotonic_clock::now();
-    #endif
-
-            // Pass the images to the SLAM system
-            SLAM.TrackStereo(imLeftRect,imRightRect,tframe,vImuMeas);
-
-    #ifdef COMPILEDWITHC11
-            std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
-    #else
-            std::chrono::monotonic_clock::time_point t2 = std::chrono::monotonic_clock::now();
-    #endif
-
-#ifdef REGISTER_TIMES
-            t_track = t_rect + std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(t2 - t1).count();
-            SLAM.InsertTrackTime(t_track);
-#endif
-
-            double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
-
-            vTimesTrack[ni]=ttrack;
-
-            // Wait to load the next frame
-            double T=0;
-            if(ni<nImages-1)
-                T = vTimestampsCam[ni+1]-tframe;
-            else if(ni>0)
-                T = tframe-vTimestampsCam[ni-1];
-
-            if(ttrack<T)
-                usleep((T-ttrack)*1e6); // 1e6
+    VideoRead video_reader;
+    video_reader.start(2);
+    smart_walker_imu imu;
+    vImuMeas.clear();
+    imu.get_data(vImuMeas, 0);
+    while (true)
+    {
+        auto frame = video_reader.get_frame();
+        if (frame.empty()) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          continue;
         }
+        double tframe = (double)std::chrono::duration_cast<std::chrono::nanoseconds>
+            (std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1.0e9;
+
+        vImuMeas.clear();
+        imu.get_data(vImuMeas, tframe);
+        std::cout << "###### imu size: " << vImuMeas.size() << std::endl;
+
+        // Read left and right images from file
+        imLeft = cv::Mat(frame, cv::Rect(0, 0, 640, 480));
+        imRight = cv::Mat(frame, cv::Rect(640, 0, 640, 480));
+        cv::remap(imLeft,imLeftRect,M1l,M2l,cv::INTER_LINEAR);
+        cv::remap(imRight,imRightRect,M1r,M2r,cv::INTER_LINEAR);
+
+        SLAM.TrackStereo(imLeftRect,imRightRect,tframe,vImuMeas);
+    }
 
     // Stop all threads
     SLAM.Shutdown();
 
 
     // Save camera trajectory
-    const string kf_file =  "kf_" + string("dataset-MH01_stereoi") + ".txt";
-    const string f_file =  "f_" + string("dataset-MH01_stereoi") + ".txt";
+    const string kf_file =  "kf_" + string("stereo_inertial_test") + ".txt";
+    const string f_file =  "f_" + string("stereo_inertial_test") + ".txt";
     SLAM.SaveTrajectoryEuRoC(f_file);
     SLAM.SaveKeyFrameTrajectoryEuRoC(kf_file);
 
     return 0;
-}
-
-void LoadImages(const string &strPathLeft, const string &strPathRight, const string &strPathTimes,
-                vector<string> &vstrImageLeft, vector<string> &vstrImageRight, vector<double> &vTimeStamps)
-{
-    ifstream fTimes;
-    fTimes.open(strPathTimes.c_str());
-    vTimeStamps.reserve(5000);
-    vstrImageLeft.reserve(5000);
-    vstrImageRight.reserve(5000);
-    while(!fTimes.eof())
-    {
-        string s;
-        getline(fTimes,s);
-        std::cout << s <<  endl;
-        if(!s.empty())
-        {
-            stringstream ss;
-            ss << s;
-            vstrImageLeft.push_back(strPathLeft + "/" + ss.str() + ".png");
-            vstrImageRight.push_back(strPathRight + "/" + ss.str() + ".png");
-            double t;
-            ss >> t;
-            vTimeStamps.push_back(t/1e9);
-
-        }
-    }
-}
-
-void LoadIMU(const string &strImuPath, vector<double> &vTimeStamps, vector<cv::Point3f> &vAcc, vector<cv::Point3f> &vGyro)
-{
-    ifstream fImu;
-    fImu.open(strImuPath.c_str());
-    vTimeStamps.reserve(5000);
-    vAcc.reserve(5000);
-    vGyro.reserve(5000);
-
-    while(!fImu.eof())
-    {
-        string s;
-        getline(fImu,s);
-        if (s[0] == '#')
-            continue;
-
-        if(!s.empty())
-        {
-            string item;
-            size_t pos = 0;
-            double data[7];
-            int count = 0;
-            while ((pos = s.find(',')) != string::npos) {
-                item = s.substr(0, pos);
-                data[count++] = stod(item);
-                s.erase(0, pos + 1);
-            }
-            item = s.substr(0, pos);
-            data[6] = stod(item);
-
-            vTimeStamps.push_back(data[0]/1e9);
-            vAcc.push_back(cv::Point3f(data[4],data[5],data[6]));
-            vGyro.push_back(cv::Point3f(data[1],data[2],data[3]));
-        }
-    }
 }

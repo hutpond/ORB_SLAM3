@@ -195,7 +195,9 @@ target_link_libraries(mono_inertial_tum_vi ${PROJECT_NAME})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/Examples/Stereo-Inertial)
 
 add_executable(stereo_inertial_test
-Examples/Stereo-Inertial/stereo_inertial_test.cc)
+Examples/Stereo-Inertial/stereo_inertial_test.cc
+Examples/imu/smart_walker_imu.cc
+)
 target_link_libraries(stereo_inertial_test ${PROJECT_NAME})
 
 add_executable(stereo_inertial_euroc
